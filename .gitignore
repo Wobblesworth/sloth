@@ -1,0 +1,13 @@
+# Evidence data and Elasticsearch storage (large, sensitive)
+data/
+
+# Local configuration (may contain passwords/customizations)
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

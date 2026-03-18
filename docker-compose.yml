@@ -1,0 +1,46 @@
+services:
+
+  # --- Elasticsearch ---
+  # Search engine and data store. All parsed evidence ends up here.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION}
+    container_name: sloth-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms${ES_HEAP} -Xmx${ES_HEAP}
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    volumes:
+      - ${DATA_PATH}/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - "${BIND_ADDRESS}:${ES_PORT}:9200"
+    networks:
+      - sloth-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # --- Kibana ---
+  # Web UI for exploring and analyzing data.
+  # Access from browser: http://<ip>:5601
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ES_VERSION}
+    container_name: sloth-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "${BIND_ADDRESS}:${KIBANA_PORT}:5601"
+    networks:
+      - sloth-net
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+networks:
+  sloth-net:
+    name: sloth-net
