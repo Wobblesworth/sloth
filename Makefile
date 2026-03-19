@@ -48,8 +48,9 @@ build:
 	@docker compose build
 	@echo "Build complete."
 
-# Rebuild and restart (build + restart pipeline)
+# Rebuild and restart (stop + build + restart pipeline)
 rebuild:
+	@docker compose stop pipeline 2>/dev/null || true
 	@docker compose build pipeline
 	@docker compose up -d pipeline
 	@echo "Pipeline rebuilt and restarted."
@@ -72,14 +73,16 @@ endif
 clean-all-cases:
 	@echo "WARNING: This will delete ALL cases from Elasticsearch and processing data."
 	@echo "Kibana settings and data views will be preserved."
-	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1
 	@bash scripts/clean-cases.sh
 
 # Delete all data and start fresh (asks for confirmation)
 reset:
 	@echo "WARNING: This will delete ALL data (Elasticsearch indices, parsed evidence, everything)."
-	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
-	@docker compose down -v
+	@read -p "Are you sure? [y/N] " confirm && [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1
+	@echo "Stopping all services..."
+	@docker compose down -v --timeout 30
+	@echo "Deleting all data..."
 	@docker run --rm -v $$(pwd)/data:/data alpine rm -rf /data
 	@bash scripts/setup.sh
 	@echo "Sloth has been reset."

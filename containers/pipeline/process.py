@@ -176,13 +176,24 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
             zip_path.unlink()
             log.info(f"Moved {zip_path.name} to completed/ (skipped)")
             return True
-    except Exception:
-        pass  # ES might not be ready yet, or no matching indices
+    except Exception as e:
+        log.debug(f"Duplicate check skipped: {e}")
 
     # Setup directories
     base_dir = Path(os.environ.get("DATA_PATH", "./data"))
     processing_dir = base_dir / "processing" / case_id
     processing_dir.mkdir(parents=True, exist_ok=True)
+
+    # Lock file prevents concurrent processing of the same case
+    lock_file = processing_dir / ".lock"
+    if lock_file.exists():
+        log.warning(f"Case '{case_id}' is already being processed (lock file exists). Skipping.")
+        return True
+    try:
+        lock_file.touch(exist_ok=False)
+    except FileExistsError:
+        log.warning(f"Case '{case_id}' is already being processed. Skipping.")
+        return True
 
     raw_dir = processing_dir / "raw"
     parsed_dir = processing_dir / "parsed"
@@ -258,9 +269,12 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         # Done — move ZIP to completed
         completed_dir = base_dir / "completed"
         completed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(str(zip_path), str(completed_dir / zip_path.name))
-        zip_path.unlink()
-        log.info(f"Moved {zip_path.name} to completed/")
+        if zip_path.exists():
+            shutil.copy2(str(zip_path), str(completed_dir / zip_path.name))
+            zip_path.unlink()
+            log.info(f"Moved {zip_path.name} to completed/")
+        else:
+            log.info(f"Source file already moved (likely by clean-cases)")
 
         status["completed"] = datetime.now().isoformat()
         status["result"] = "success"
@@ -280,11 +294,22 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         return False
 
     finally:
-        # Save status
+        # Save status atomically (write to temp file, then rename)
         status_file = processing_dir / "status.json"
-        with open(status_file, "w") as f:
-            json.dump(status, f, indent=2)
-        log.info(f"Status saved to {status_file}")
+        status_tmp = processing_dir / "status.json.tmp"
+        try:
+            with open(status_tmp, "w") as f:
+                json.dump(status, f, indent=2)
+            status_tmp.rename(status_file)
+            log.info(f"Status saved to {status_file}")
+        except Exception:
+            log.warning("Could not save status file (directory may have been deleted)")
+
+        # Remove lock file
+        try:
+            lock_file.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     return True
 

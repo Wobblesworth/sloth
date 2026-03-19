@@ -48,6 +48,7 @@ services:
     build:
       context: ./containers/pipeline
     container_name: sloth-pipeline
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - ES_HOST=elasticsearch
       - ES_PORT=9200

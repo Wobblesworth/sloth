@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from process import process_zip
@@ -30,13 +31,31 @@ STABLE_WAIT = int(os.environ.get("STABLE_WAIT", "5"))  # seconds to wait for fil
 
 
 def is_file_stable(filepath, wait=STABLE_WAIT):
-    """Check if a file has stopped growing (copy is complete)."""
+    """Check if a file has stopped growing (copy is complete).
+    Performs two rounds of size checks to handle slow network copies."""
     try:
         size1 = filepath.stat().st_size
+        if size1 == 0:
+            return False
         time.sleep(wait)
         size2 = filepath.stat().st_size
-        return size1 == size2 and size1 > 0
+        if size1 != size2:
+            return False
+        # Second round to catch slow/bursty copies
+        time.sleep(wait)
+        size3 = filepath.stat().st_size
+        return size2 == size3
     except FileNotFoundError:
+        return False
+
+
+def is_es_ready():
+    """Check if Elasticsearch is reachable and healthy."""
+    try:
+        url = f"http://{ES_HOST}:{ES_PORT}/_cluster/health"
+        req = urllib.request.urlopen(url, timeout=5)
+        return req.status == 200
+    except Exception:
         return False
 
 
@@ -61,7 +80,17 @@ def main():
         files = get_pending_files()
 
         if files:
+            # Verify ES is ready before processing
+            if not is_es_ready():
+                log.warning("Elasticsearch not ready, waiting...")
+                time.sleep(POLL_INTERVAL)
+                continue
+
             for zip_file in files:
+                # Re-check file exists (may have been moved by clean-cases)
+                if not zip_file.exists():
+                    continue
+
                 log.info(f"New file detected: {zip_file.name}")
 
                 if not is_file_stable(zip_file):

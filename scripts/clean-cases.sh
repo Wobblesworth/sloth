@@ -25,6 +25,10 @@ fi
 
 if [ -n "$CASE_ID" ]; then
     # --- Delete single case ---
+    echo "Stopping pipeline..."
+    docker compose stop pipeline 2>/dev/null
+    echo "[OK] Pipeline stopped"
+    echo ""
     echo "Deleting case: ${CASE_ID}"
 
     # Delete ES indices
@@ -51,8 +55,18 @@ if [ -n "$CASE_ID" ]; then
         echo "[OK] No processing data to delete"
     fi
 
+    echo ""
+    echo "Restarting pipeline..."
+    docker compose start pipeline 2>/dev/null
+    echo "Done. Case ${CASE_ID} removed."
+    exit $ERRORS
+
 else
     # --- Delete all cases ---
+    echo "Stopping pipeline..."
+    docker compose stop pipeline 2>/dev/null
+    echo "[OK] Pipeline stopped"
+    echo ""
     echo "Deleting ALL cases..."
 
     # Delete ES indices
@@ -64,6 +78,13 @@ else
         ERRORS=$((ERRORS + 1))
     else
         echo "[OK] No indices to delete"
+    fi
+
+    # Move any pending intake files to completed (so they don't reprocess)
+    INTAKE_ZIPS=$(find data/intake -name "*.zip" 2>/dev/null | wc -l)
+    if [ "$INTAKE_ZIPS" -gt 0 ]; then
+        mv data/intake/*.zip data/completed/ 2>/dev/null
+        echo "[OK] Moved ${INTAKE_ZIPS} pending file(s) from intake/ to completed/"
     fi
 
     # Delete all processing directories
@@ -115,7 +136,12 @@ fi
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
     echo "Cleanup finished with ${ERRORS} error(s). Check messages above."
+    # Restart pipeline even on error
+    docker compose start pipeline 2>/dev/null
     exit 1
 else
-    echo "Done. Sloth is clean."
+    echo "Restarting pipeline..."
+    docker compose start pipeline 2>/dev/null
+    echo ""
+    echo "Done. Sloth is clean and running."
 fi

@@ -34,14 +34,20 @@ Kibana will be available at `http://localhost:5601` (give it ~60 seconds to star
 ## Usage
 
 ```bash
-make setup      # First-time setup (create directories, check dependencies)
-make up         # Start all services
-make down       # Stop all services (data is preserved)
-make status     # Show running containers
-make logs       # Follow live logs
-make restart    # Restart all services
-make reset      # Delete ALL data and start fresh
-make help       # Show available commands
+make setup              # First-time setup (create directories, check dependencies)
+make up                 # Start all services
+make down               # Stop all services (data is preserved)
+make status             # Show running containers
+make watch              # Watch pipeline activity (human-readable)
+make logs               # Follow raw logs (all containers, for debugging)
+make restart            # Restart all services
+make build              # Build containers (after code changes)
+make rebuild            # Rebuild + restart pipeline
+make list-cases         # List all cases in Elasticsearch
+make clean-case CASE=   # Delete a single case
+make clean-all-cases    # Delete all cases (keeps Kibana settings)
+make reset              # Delete ALL data and start fresh
+make help               # Show available commands
 ```
 
 ### Health Check
@@ -49,6 +55,21 @@ make help       # Show available commands
 ```bash
 bash scripts/health-check.sh
 ```
+
+### Watching Pipeline Activity
+
+Use `make watch` to see what Sloth is doing in real time:
+
+```
+2026-03-19 22:37:25 === Processing case: cyberoo_NBFZANCHETTA_20260319 ===
+2026-03-19 22:37:25 Organization: cyberoo, Host: NBFZANCHETTA, Date: 20260319
+2026-03-19 22:37:25 Found 73 EVTX files
+2026-03-19 22:37:29 Hayabusa produced 706 events
+2026-03-19 22:37:29 Ingested 706 docs into 'sloth-hayabusa-cyberoo_nbfzanchetta_20260319', 0 errors
+2026-03-19 22:37:29 Pipeline completed for cyberoo_NBFZANCHETTA_20260319.zip
+```
+
+Warnings and errors are highlighted with ⚠ and ✗ symbols.
 
 ## Configuration
 
@@ -100,7 +121,13 @@ make clean-case CASE=<id>     # Delete a single case (ES indices + local files)
 make clean-all-cases          # Delete all cases (keeps Kibana settings)
 ```
 
-To reprocess a case, copy the original ZIP from `data/completed/` back into `data/intake/`.
+To reprocess a case:
+
+1. `make clean-case CASE=<case_id>` — removes the case from Elasticsearch
+2. Copy the original ZIP from `data/completed/` back into `data/intake/`
+3. Sloth will automatically reprocess it
+
+Original ZIP files in `data/completed/` are never deleted by clean commands. Delete them manually if you no longer need them.
 
 ## Architecture
 
@@ -144,7 +171,7 @@ sloth/
 ## Roadmap
 
 - [x] Phase 1: Foundation (Elasticsearch + Kibana)
-- [ ] Phase 2: Pipeline + Hayabusa (automated threat detection)
+- [x] Phase 2: Pipeline + Hayabusa (automated threat detection)
 - [ ] Phase 3: EZ Tools (MFT, Registry, Prefetch, EVTX parsing)
 - [ ] Phase 4: Plaso (super timeline generation)
 - [ ] Phase 5: Pre-built dashboards
