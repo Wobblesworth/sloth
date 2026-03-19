@@ -41,6 +41,30 @@ services:
       elasticsearch:
         condition: service_healthy
 
+  # --- Pipeline ---
+  # Watches intake/ for new evidence, parses and ingests into Elasticsearch.
+  pipeline:
+    build:
+      context: ./containers/pipeline
+    container_name: sloth-pipeline
+    environment:
+      - ES_HOST=elasticsearch
+      - ES_PORT=9200
+      - DATA_PATH=/data
+      - POLL_INTERVAL=10
+      - STABLE_WAIT=5
+    volumes:
+      - ${DATA_PATH}/intake:/data/intake
+      - ${DATA_PATH}/processing:/data/processing
+      - ${DATA_PATH}/completed:/data/completed
+      - ${DATA_PATH}/failed:/data/failed
+    networks:
+      - sloth-net
+    restart: unless-stopped
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
 networks:
   sloth-net:
     name: sloth-net
