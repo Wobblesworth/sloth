@@ -64,6 +64,44 @@ Copy `.env.example` to `.env` and edit as needed:
 | `ES_HOST` | `localhost` | Elasticsearch host (change if ES runs on a different machine) |
 | `DATA_PATH` | `./data` | Where evidence and parsed data are stored |
 
+## Evidence Naming Convention
+
+Name your evidence ZIP files following this pattern:
+
+```
+<organization>_<hostname>_<date>.zip
+```
+
+Examples:
+```
+acmecorp_DC01_20260319.zip
+clientB_LAPTOP-CFO_20260319.zip
+incident42_WKS001_20260315.zip
+```
+
+Sloth automatically parses the filename and adds metadata to every event in Elasticsearch:
+
+| Part | ECS Field | Example |
+|---|---|---|
+| `acmecorp` | `organization.name` | Filter all events by client |
+| `DC01` | `case.hostname` | Identify the source machine |
+| `20260319` | `case.date` | Date of the triage collection |
+| (auto) | `case.id` | `acmecorp_DC01_20260319` (index name) |
+
+This makes it easy to filter in Kibana: `organization.name: acmecorp` shows all triages for that client.
+
+If the filename does not match the convention, Sloth still processes it — metadata fields are simply left empty and a timestamp is appended to ensure a unique case ID.
+
+## Case Management
+
+```bash
+make list-cases               # List all cases in Elasticsearch
+make clean-case CASE=<id>     # Delete a single case (ES indices + local files)
+make clean-all-cases          # Delete all cases (keeps Kibana settings)
+```
+
+To reprocess a case, copy the original ZIP from `data/completed/` back into `data/intake/`.
+
 ## Architecture
 
 ```

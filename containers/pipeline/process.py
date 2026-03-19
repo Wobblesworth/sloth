@@ -54,11 +54,46 @@ def find_hayabusa():
     return None
 
 
-def derive_case_id(zip_path):
-    """Derive a case ID from the ZIP filename."""
-    stem = Path(zip_path).stem  # e.g. "WORKSTATION01" or "WORKSTATION01_triage"
+def parse_evidence_name(zip_path):
+    """
+    Parse the evidence filename to extract metadata.
+
+    Naming convention: <organization>_<hostname>_<date>.zip
+    Examples:
+        acmecorp_DC01_20260319.zip    -> org=acmecorp, host=DC01, date=20260319
+        clientB_LAPTOP01_20260319.zip -> org=clientB, host=LAPTOP01, date=20260319
+        random-file.zip               -> org=None, host=None, date=None (fallback)
+
+    Returns a dict with: case_id, organization, hostname, date (all may be None)
+    """
+    import re
+    stem = Path(zip_path).stem
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{stem}_{timestamp}"
+
+    # Try to match convention: org_host_date (host may contain dashes)
+    match = re.match(r"^([^_]+)_(.+)_(\d{8})$", stem)
+    if match:
+        org, host, date = match.groups()
+        # Remove dashes from case_id (used in ES index names) but keep original in metadata
+        safe_id = f"{org}_{host}_{date}".replace("-", "")
+        return {
+            "case_id": safe_id,
+            "organization": org,
+            "hostname": host,
+            "date": date,
+        }
+
+    # Fallback: use filename as-is with timestamp to ensure uniqueness
+    log.warning(
+        f"Filename '{stem}' does not match convention <org>_<host>_<date>. "
+        "Metadata will not be extracted."
+    )
+    return {
+        "case_id": f"{stem}_{timestamp}",
+        "organization": None,
+        "hostname": None,
+        "date": None,
+    }
 
 
 def extract_zip(zip_path, extract_dir):
@@ -113,11 +148,36 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         log.error(f"File not found: {zip_path}")
         return False
 
+    # Parse filename for metadata
+    meta = parse_evidence_name(zip_path)
     if case_id is None:
-        case_id = derive_case_id(zip_path)
+        case_id = meta["case_id"]
 
     log.info(f"=== Processing case: {case_id} ===")
     log.info(f"Source: {zip_path}")
+    if meta["organization"]:
+        log.info(f"Organization: {meta['organization']}, Host: {meta['hostname']}, Date: {meta['date']}")
+
+    # Check if case already exists in Elasticsearch
+    try:
+        es = Elasticsearch(f"http://{es_host}:{es_port}")
+        # Use _cat/indices to count actual matching indices (wildcards with HEAD are unreliable)
+        response = es.cat.indices(index=f"sloth-*-{case_id}".lower(), h="index", format="json")
+        if len(response) > 0:
+            log.warning(
+                f"Case '{case_id}' already exists in Elasticsearch. "
+                f"Skipping. To reprocess, run: make clean-case CASE={case_id}"
+            )
+            # Move ZIP to completed so watcher doesn't retry every cycle
+            base_dir = Path(os.environ.get("DATA_PATH", "./data"))
+            completed_dir = base_dir / "completed"
+            completed_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(zip_path), str(completed_dir / zip_path.name))
+            zip_path.unlink()
+            log.info(f"Moved {zip_path.name} to completed/ (skipped)")
+            return True
+    except Exception:
+        pass  # ES might not be ready yet, or no matching indices
 
     # Setup directories
     base_dir = Path(os.environ.get("DATA_PATH", "./data"))
@@ -132,6 +192,9 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
     status = {
         "case_id": case_id,
         "source": str(zip_path),
+        "organization": meta["organization"],
+        "hostname": meta["hostname"],
+        "date": meta["date"],
         "started": datetime.now().isoformat(),
         "steps": {},
     }
@@ -172,8 +235,19 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
                 "sloth-hayabusa",
             )
             index_name = f"sloth-hayabusa-{case_id}".lower()
+
+            # Build case metadata to inject into every document
+            case_meta = {"case": {"id": case_id}}
+            if meta["organization"]:
+                case_meta["organization"] = {"name": meta["organization"]}
+            if meta["hostname"]:
+                case_meta["case"]["hostname"] = meta["hostname"]
+            if meta["date"]:
+                case_meta["case"]["date"] = meta["date"]
+
             total, errors = ingest_jsonl(
-                es, hayabusa_output, index_name, hayabusa_transform
+                es, hayabusa_output, index_name, hayabusa_transform,
+                extra_fields=case_meta,
             )
             status["steps"]["ingest_hayabusa"] = {
                 "index": index_name,
@@ -184,7 +258,8 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         # Done — move ZIP to completed
         completed_dir = base_dir / "completed"
         completed_dir.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(zip_path), str(completed_dir / zip_path.name))
+        shutil.copy2(str(zip_path), str(completed_dir / zip_path.name))
+        zip_path.unlink()
         log.info(f"Moved {zip_path.name} to completed/")
 
         status["completed"] = datetime.now().isoformat()
@@ -199,7 +274,8 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         failed_dir = base_dir / "failed"
         failed_dir.mkdir(parents=True, exist_ok=True)
         if zip_path.exists():
-            shutil.move(str(zip_path), str(failed_dir / zip_path.name))
+            shutil.copy2(str(zip_path), str(failed_dir / zip_path.name))
+            zip_path.unlink()
 
         return False
 
