@@ -5,8 +5,13 @@ data/
 .env
 
 # Python
+.venv/
 __pycache__/
 *.pyc
+
+# Tools and test data (downloaded at build time)
+tools/
+test-data/
 
 # OS
 .DS_Store

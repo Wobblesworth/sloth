@@ -89,8 +89,10 @@ sloth/
 ├── scripts/
 │   ├── setup.sh            # First-time setup
 │   └── health-check.sh     # Service health check
-├── containers/             # Custom container definitions (coming soon)
+├── containers/
 │   └── pipeline/
+│       ├── mappings/       # Elasticsearch index templates (ECS-aligned)
+│       └── parsers/        # Parser modules (Hayabusa, MFT, etc.)
 ├── dashboards/             # Pre-built Kibana dashboards (coming soon)
 ├── docs/                   # Additional documentation (coming soon)
 └── data/                   # Evidence and runtime data (git-ignored)

@@ -1,0 +1,59 @@
+{
+  "index_patterns": ["sloth-hayabusa-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp":               { "type": "date" },
+        "event": { "properties": {
+          "module":                 { "type": "keyword" },
+          "code":                   { "type": "keyword" },
+          "provider":               { "type": "keyword" },
+          "severity":               { "type": "integer" },
+          "severity_label":         { "type": "keyword" },
+          "original":               { "type": "text" },
+          "original_details":       { "type": "flattened" },
+          "extra":                  { "type": "flattened" }
+        }},
+        "host": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "rule": { "properties": {
+          "name":                   { "type": "keyword" },
+          "id":                     { "type": "keyword" },
+          "ruleset":                { "type": "keyword" }
+        }},
+        "threat": { "properties": {
+          "tactic": { "properties": {
+            "name":                 { "type": "keyword" }
+          }},
+          "technique": { "properties": {
+            "id":                   { "type": "keyword" }
+          }}
+        }},
+        "user": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "process": { "properties": {
+          "executable":             { "type": "keyword" },
+          "command_line":           { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+          "pid":                    { "type": "long" },
+          "parent": { "properties": {
+            "pid":                  { "type": "long" },
+            "command_line":         { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}}
+          }}
+        }},
+        "tags":                     { "type": "keyword" },
+        "log": { "properties": {
+          "file": { "properties": {
+            "path":                 { "type": "keyword" }
+          }}
+        }},
+        "record_id":                { "type": "integer" }
+      }
+    }
+  }
+}
