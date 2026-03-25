@@ -483,7 +483,7 @@ def _handle_sysmon_12(details, extra):
 
     event_type = details.pop("EventType", None)
     if event_type:
-        doc["event"] = {"action": event_type}
+        doc["event"]["action"] = event_type
 
     tgt_obj = details.pop("TgtObj", None)
     if tgt_obj:
@@ -503,7 +503,7 @@ def _handle_sysmon_13(details, extra):
 
     event_type = details.pop("EventType", None)
     if event_type:
-        doc["event"] = {"action": event_type}
+        doc["event"]["action"] = event_type
 
     reg = {}
     tgt_obj = details.pop("TgtObj", None)
@@ -1085,7 +1085,7 @@ def _handle_tasksch_200(details, extra):
 
     action = details.pop("Action", None)
     if action:
-        doc["process"] = {"command_line": action}
+        doc["process"] = {"executable": action, "command_line": action}
 
     return doc
 
@@ -1096,7 +1096,9 @@ def _handle_pwsh_classic_400(details, extra):
 
     host_app = details.pop("HostApplication", None)
     if host_app:
-        doc["process"] = {"command_line": host_app}
+        # Extract executable from first token of command line
+        exe = host_app.split()[0] if host_app.split() else host_app
+        doc["process"] = {"executable": exe, "command_line": host_app}
 
     details.pop("CommandLine", None)
     details.pop("CommandName", None)
@@ -1117,7 +1119,8 @@ def _handle_pwsh_classic_600(details, extra):
 
     host_app = details.pop("HostApplication", None)
     if host_app:
-        doc["process"] = {"command_line": host_app}
+        exe = host_app.split()[0] if host_app.split() else host_app
+        doc["process"] = {"executable": exe, "command_line": host_app}
 
     details.pop("CommandLine", None)
     details.pop("CommandName", None)
