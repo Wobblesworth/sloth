@@ -1728,6 +1728,94 @@ def _handle_sys_98(details, extra):
     return doc
 
 
+def _handle_sysmon_2(details, extra):
+    """Sysmon EventID 2 — File Creation Time Changed (Timestomping)."""
+    doc = {"event": {"action": "file-time-changed", "category": ["file"], "type": ["change"], "outcome": "success"}}
+
+    path = details.pop("Path", None)
+    if path:
+        doc["file"] = {"path": path}
+
+    proc = _build_process(details)
+    if proc:
+        doc["process"] = proc
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
+    details.pop("CreateTime", None)
+    details.pop("PrevTime", None)
+    _pop_internal(details, "PGUID")
+    return doc
+
+
+def _handle_sysmon_wmi(details, extra):
+    """Sysmon EventID 19/20/21 — WMI Event Filter/Consumer/Binding."""
+    doc = {"event": {"action": "wmi-persistence", "category": ["configuration"], "type": ["creation"], "outcome": "success"}}
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
+    for k in list(details):
+        details.pop(k)
+    return doc
+
+
+def _handle_sysmon_23(details, extra):
+    """Sysmon EventID 23 — File Deleted."""
+    doc = {"event": {"action": "file-deleted", "category": ["file"], "type": ["deletion"], "outcome": "success"}}
+
+    path = details.pop("Path", None)
+    if path:
+        doc["file"] = {"path": path}
+
+    proc = _build_process(details)
+    if proc:
+        doc["process"] = proc
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
+    _pop_internal(details, "PGUID")
+    return doc
+
+
+def _handle_sec_4698(details, extra):
+    """Security EventID 4698 — Scheduled Task Created."""
+    doc = {"event": {"action": "scheduled-task-created", "category": ["configuration"], "type": ["creation"], "outcome": "success"}}
+
+    name = details.pop("Name", None)
+    if name:
+        doc["task"] = {"name": name}
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
+    details.pop("Content", None)
+    details.pop("LID", None)
+    return doc
+
+
+def _handle_sec_4699(details, extra):
+    """Security EventID 4699 — Scheduled Task Deleted."""
+    doc = {"event": {"action": "scheduled-task-deleted", "category": ["configuration"], "type": ["deletion"], "outcome": "success"}}
+
+    name = details.pop("Name", None)
+    if name:
+        doc["task"] = {"name": name}
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
+    details.pop("LID", None)
+    return doc
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -1828,6 +1916,15 @@ DISPATCH = {
     # Partition / Storage
     ("MS-Win-Partition/Diagnostic", 1006): _handle_partition_1006,
     ("MS-Win-Ntfs/Op", 4): _handle_ntfs_4,
+    # Sysmon — additional
+    ("Sysmon", 2):      _handle_sysmon_2,
+    ("Sysmon", 19):     _handle_sysmon_wmi,
+    ("Sysmon", 20):     _handle_sysmon_wmi,
+    ("Sysmon", 21):     _handle_sysmon_wmi,
+    ("Sysmon", 23):     _handle_sysmon_23,
+    # Security — additional
+    ("Sec", 4698):      _handle_sec_4698,
+    ("Sec", 4699):      _handle_sec_4699,
 }
 
 
@@ -1837,9 +1934,11 @@ DISPATCH = {
 
 def _generic_extract(details):
     """Extract common fields from Details for events without a specific handler."""
-    doc = {}
+    doc = {"event": {"category": ["event"], "type": ["info"], "outcome": "success"}}
 
-    user = parse_user(details.pop("User", None))
+    # Try multiple user field names for maximum coverage
+    user_raw = details.pop("User", None) or details.pop("SrcUser", None) or details.pop("TgtUser", None)
+    user = parse_user(user_raw)
     if user:
         doc["user"] = user
 
