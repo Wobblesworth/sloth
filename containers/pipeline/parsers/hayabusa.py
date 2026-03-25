@@ -160,7 +160,7 @@ def _build_process(details, exe_key="Proc", pid_key="PID"):
 
 def _handle_sysmon_1(details, extra):
     """Sysmon EventID 1 — Process Creation."""
-    doc = {"event": {"category": ["process"], "type": ["start"], "outcome": "success"}}
+    doc = {"event": {"action": "process-created", "category": ["process"], "type": ["start"], "outcome": "success"}}
 
     # Process
     proc = _build_process(details)
@@ -234,7 +234,7 @@ def _handle_sysmon_1(details, extra):
 
 def _handle_sysmon_3(details, extra):
     """Sysmon EventID 3 — Network Connection."""
-    doc = {"event": {"category": ["network"], "type": ["connection"], "outcome": "success"}}
+    doc = {"event": {"action": "network-connection", "category": ["network"], "type": ["connection"], "outcome": "success"}}
 
     # Source
     source = {}
@@ -301,7 +301,7 @@ def _handle_sysmon_5(details, extra):
 
 def _handle_sysmon_6(details, extra):
     """Sysmon EventID 6 — Driver Loaded."""
-    doc = {"event": {"category": ["driver"], "type": ["start"], "outcome": "success"}}
+    doc = {"event": {"action": "driver-loaded", "category": ["driver"], "type": ["start"], "outcome": "success"}}
 
     f = {}
     path = details.pop("Path", None)
@@ -336,7 +336,7 @@ def _handle_sysmon_6(details, extra):
 
 def _handle_sysmon_7(details, extra):
     """Sysmon EventID 7 — Image Loaded (DLL)."""
-    doc = {"event": {"category": ["process"], "type": ["start"], "outcome": "success"}}
+    doc = {"event": {"action": "dll-loaded", "category": ["process"], "type": ["start"], "outcome": "success"}}
 
     dll = {}
     image = details.pop("Image", None)
@@ -645,7 +645,7 @@ def _handle_sec_4672(details, extra):
 
 def _handle_sec_4688(details, extra):
     """Security EventID 4688 — Process Creation."""
-    doc = {"event": {"category": ["process"], "type": ["start"], "outcome": "success"}}
+    doc = {"event": {"action": "process-created", "category": ["process"], "type": ["start"], "outcome": "success"}}
 
     proc = _build_process(details)
     cmdline = details.pop("Cmdline", None)
@@ -756,7 +756,7 @@ def _handle_sec_5145(details, extra):
 
 def _handle_sec_5156(details, extra):
     """Security EventID 5156 — WFP Connection Allowed."""
-    doc = {"event": {"category": ["network"], "type": ["connection"], "outcome": "success"}}
+    doc = {"event": {"action": "network-connection-allowed", "category": ["network"], "type": ["connection"], "outcome": "success"}}
 
     # Source
     source = {}
@@ -809,7 +809,7 @@ def _handle_bitscli_59(details, extra):
 
 def _handle_pwsh_4104(details, extra):
     """PowerShell EventID 4104 — ScriptBlock Logging."""
-    doc = {"event": {"category": ["process"], "type": ["info"]}}
+    doc = {"event": {"action": "powershell-scriptblock", "category": ["process"], "type": ["info"], "outcome": "success"}}
 
     script = details.pop("ScriptBlock", None)
     if script:
@@ -1477,7 +1477,7 @@ def _handle_sec_5140(details, extra):
 
 def _handle_sec_5157(details, extra):
     """Security EventID 5157 — WFP Connection Blocked."""
-    doc = {"event": {"category": ["network"], "type": ["denied"], "outcome": "failure"}}
+    doc = {"event": {"action": "network-connection-blocked", "category": ["network"], "type": ["denied"], "outcome": "failure"}}
 
     source = {}
     src_ip = details.pop("SrcIP", None)
@@ -1578,7 +1578,7 @@ def _handle_sys_7031(details, extra):
 
 def _handle_pwsh_4103(details, extra):
     """PowerShell EventID 4103 — Pipeline Execution."""
-    doc = {"event": {"category": ["process"], "type": ["info"]}}
+    doc = {"event": {"action": "powershell-pipeline", "category": ["process"], "type": ["info"], "outcome": "success"}}
 
     payload = details.pop("Payload", None)
     if payload:
@@ -1620,7 +1620,7 @@ def _handle_firewall_2006(details, extra):
 
 def _handle_partition_1006(details, extra):
     """MS-Win-Partition EventID 1006 — Device Connected."""
-    doc = {"event": {"action": "device-connected", "category": ["host"], "type": ["info"]}}
+    doc = {"event": {"action": "device-connected", "category": ["host"], "type": ["info"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1628,7 +1628,7 @@ def _handle_partition_1006(details, extra):
 
 def _handle_ntfs_4(details, extra):
     """MS-Win-Ntfs EventID 4 — NTFS Volume Mounted."""
-    doc = {"event": {"action": "volume-mounted", "category": ["host"], "type": ["info"]}}
+    doc = {"event": {"action": "volume-mounted", "category": ["host"], "type": ["info"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1636,7 +1636,7 @@ def _handle_ntfs_4(details, extra):
 
 def _handle_oalerts_300(details, extra):
     """OAlerts EventID 300 — Office App Popup."""
-    doc = {"event": {"category": ["process"], "type": ["info"]}}
+    doc = {"event": {"action": "office-popup", "category": ["process"], "type": ["info"], "outcome": "success"}}
 
     app = details.pop("App", None)
     if app:
@@ -1677,7 +1677,7 @@ def _handle_codeintegrity_3033(details, extra):
 
 def _handle_sys_20001(details, extra):
     """System EventID 20001 — New PnP Device."""
-    doc = {"event": {"action": "device-connected", "category": ["host"], "type": ["info"]}}
+    doc = {"event": {"action": "device-connected", "category": ["host"], "type": ["info"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1685,7 +1685,12 @@ def _handle_sys_20001(details, extra):
 
 def _handle_defender_1013(details, extra):
     """Defender EventID 1013 — Malware History Deleted."""
-    doc = {"event": {"action": "malware-history-deleted", "category": ["malware"], "type": ["deletion"]}}
+    doc = {"event": {"action": "malware-history-deleted", "category": ["malware"], "type": ["deletion"], "outcome": "success"}}
+
+    user = parse_user(details.pop("User", None))
+    if user:
+        doc["user"] = user
+
     for k in list(details):
         details.pop(k)
     return doc
@@ -1693,7 +1698,7 @@ def _handle_defender_1013(details, extra):
 
 def _handle_sys_boot(details, extra):
     """System EventID 6005/6009/12 — System Startup."""
-    doc = {"event": {"action": "system-startup", "category": ["host"], "type": ["start"]}}
+    doc = {"event": {"action": "system-startup", "category": ["host"], "type": ["start"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1701,7 +1706,7 @@ def _handle_sys_boot(details, extra):
 
 def _handle_sys_shutdown(details, extra):
     """System EventID 6006 — System Shutdown."""
-    doc = {"event": {"action": "system-shutdown", "category": ["host"], "type": ["end"]}}
+    doc = {"event": {"action": "system-shutdown", "category": ["host"], "type": ["end"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1709,7 +1714,7 @@ def _handle_sys_shutdown(details, extra):
 
 def _handle_sys_6013(details, extra):
     """System EventID 6013 — System Uptime."""
-    doc = {"event": {"action": "system-uptime", "category": ["host"], "type": ["info"]}}
+    doc = {"event": {"action": "system-uptime", "category": ["host"], "type": ["info"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
@@ -1717,7 +1722,7 @@ def _handle_sys_6013(details, extra):
 
 def _handle_sys_98(details, extra):
     """System EventID 98 — Volume Shadow Copy Mount."""
-    doc = {"event": {"action": "vss-mount", "category": ["host"], "type": ["info"]}}
+    doc = {"event": {"action": "vss-mount", "category": ["host"], "type": ["info"], "outcome": "success"}}
     for k in list(details):
         details.pop(k)
     return doc
