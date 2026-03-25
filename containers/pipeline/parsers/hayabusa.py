@@ -854,7 +854,8 @@ def _handle_rds_rcm_1149(details, extra):
         user_target = {"name": tgt_user}
         if domain:
             user_target["domain"] = domain
-        doc["user"] = {"target": user_target}
+        doc["user"] = dict(user_target)
+        doc["user"]["target"] = user_target
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
@@ -1281,9 +1282,22 @@ def _handle_sec_4720(details, extra):
     """Security EventID 4720 — User Account Created."""
     doc = {"event": {"action": "user-account-created", "category": ["iam"], "type": ["creation"], "outcome": "success"}}
 
+    # Subject (who created the account) from ExtraFieldInfo
+    subj_user = extra.pop("SubjectUserName", None)
+    subj_domain = extra.pop("SubjectDomainName", None)
+    if subj_user:
+        user = {"name": subj_user}
+        if subj_domain and subj_domain != "-":
+            user["domain"] = subj_domain
+        doc["user"] = user
+
+    # Target (the account that was created)
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        tgt_domain = extra.pop("TargetDomainName", None)
+        if tgt_domain and tgt_domain != "-":
+            tgt_user["domain"] = tgt_domain
+        doc.setdefault("user", {})["target"] = tgt_user
 
     details.pop("TgtSID", None)
     return doc
