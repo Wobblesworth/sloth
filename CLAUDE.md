@@ -85,6 +85,13 @@ When starting a session, suggest the best approach for the task at hand:
 - `event.original_details` (flattened) contains only unmapped Details fields — should be nearly empty for handled events
 
 ## ECS Normalization Conventions
+### Universal queryability
+Pivot fields MUST be populated on every event where the information exists, regardless of event type. A single Kibana query on a pivot field must match across all event types. Specific/contextual fields (user.target.*, source.port, process.parent.*) enrich but never replace pivot fields.
+
+Pivot fields: `user.name`, `source.ip`, `process.executable`, `host.name`, `event.category`, `event.action`, `event.outcome`
+
+Example: Sec/4624 has TgtUser="Administrator" → set BOTH `user.name: "Administrator"` AND `user.target.name: "Administrator"`. Sec/4648 has SrcUser="bob" and TgtUser="admin" → `user.name: "bob"`, `user.target.name: "admin"` — both queryable.
+
 When adding new parsers or handlers, follow these conventions to keep data consistent across all parsers:
 - **Always set** `event.category`, `event.type`, and `event.outcome` on every handler
 - `event.category` and `event.type` are **arrays** — an RDP logon is `["authentication", "network"]`
