@@ -52,9 +52,11 @@ services:
     environment:
       - ES_HOST=elasticsearch
       - ES_PORT=9200
+      - ES_HEAP=${ES_HEAP}
       - DATA_PATH=/data
       - POLL_INTERVAL=10
       - STABLE_WAIT=5
+      - PARALLEL_WORKERS=${PARALLEL_WORKERS:-auto}
     volumes:
       - ${DATA_PATH}/intake:/data/intake
       - ${DATA_PATH}/processing:/data/processing

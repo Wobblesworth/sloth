@@ -12,6 +12,10 @@
           "module":                 { "type": "keyword" },
           "code":                   { "type": "keyword" },
           "provider":               { "type": "keyword" },
+          "action":                 { "type": "keyword" },
+          "category":               { "type": "keyword" },
+          "type":                   { "type": "keyword" },
+          "outcome":                { "type": "keyword" },
           "severity":               { "type": "integer" },
           "severity_label":         { "type": "keyword" },
           "original":               { "type": "text" },
@@ -32,20 +36,131 @@
           }},
           "technique": { "properties": {
             "id":                   { "type": "keyword" }
+          }},
+          "indicator": { "properties": {
+            "description":          { "type": "keyword" }
           }}
         }},
         "user": { "properties": {
-          "name":                   { "type": "keyword" }
-        }},
-        "process": { "properties": {
-          "executable":             { "type": "keyword" },
-          "command_line":           { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
-          "pid":                    { "type": "long" },
-          "parent": { "properties": {
-            "pid":                  { "type": "long" },
-            "command_line":         { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}}
+          "name":                   { "type": "keyword" },
+          "domain":                 { "type": "keyword" },
+          "id":                     { "type": "keyword" },
+          "target": { "properties": {
+            "name":                 { "type": "keyword" },
+            "domain":               { "type": "keyword" },
+            "id":                   { "type": "keyword" }
           }}
         }},
+        "process": { "properties": {
+          "name":                   { "type": "keyword" },
+          "executable":             { "type": "keyword" },
+          "command_line":           { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}},
+          "working_directory":      { "type": "keyword" },
+          "pid":                    { "type": "long" },
+          "hash": { "properties": {
+            "sha1":                 { "type": "keyword" },
+            "md5":                  { "type": "keyword" },
+            "sha256":               { "type": "keyword" }
+          }},
+          "pe": { "properties": {
+            "description":          { "type": "keyword" },
+            "product":              { "type": "keyword" },
+            "company":              { "type": "keyword" },
+            "imphash":              { "type": "keyword" },
+            "original_file_name":   { "type": "keyword" }
+          }},
+          "parent": { "properties": {
+            "executable":           { "type": "keyword" },
+            "pid":                  { "type": "long" },
+            "command_line":         { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 1024 }}}
+          }},
+          "target": { "properties": {
+            "executable":           { "type": "keyword" },
+            "pid":                  { "type": "long" }
+          }}
+        }},
+        "source": { "properties": {
+          "ip":                     { "type": "ip" },
+          "port":                   { "type": "integer" },
+          "address":                { "type": "keyword" }
+        }},
+        "destination": { "properties": {
+          "ip":                     { "type": "ip" },
+          "port":                   { "type": "integer" },
+          "address":                { "type": "keyword" }
+        }},
+        "network": { "properties": {
+          "transport":              { "type": "keyword" },
+          "direction":              { "type": "keyword" },
+          "protocol":               { "type": "keyword" }
+        }},
+        "group": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "file": { "properties": {
+          "path":                   { "type": "keyword", "fields": { "text": { "type": "text" }}},
+          "name":                   { "type": "keyword" },
+          "share_name":             { "type": "keyword" },
+          "hash": { "properties": {
+            "sha1":                 { "type": "keyword" },
+            "md5":                  { "type": "keyword" },
+            "sha256":               { "type": "keyword" }
+          }},
+          "code_signature": { "properties": {
+            "exists":               { "type": "boolean" },
+            "status":               { "type": "keyword" }
+          }}
+        }},
+        "dll": { "properties": {
+          "path":                   { "type": "keyword" },
+          "hash": { "properties": {
+            "sha1":                 { "type": "keyword" },
+            "md5":                  { "type": "keyword" },
+            "sha256":               { "type": "keyword" }
+          }},
+          "pe": { "properties": {
+            "description":          { "type": "keyword" },
+            "product":              { "type": "keyword" },
+            "company":              { "type": "keyword" },
+            "imphash":              { "type": "keyword" },
+            "original_file_name":   { "type": "keyword" }
+          }},
+          "code_signature": { "properties": {
+            "exists":               { "type": "boolean" },
+            "status":               { "type": "keyword" }
+          }}
+        }},
+        "registry": { "properties": {
+          "path":                   { "type": "keyword" },
+          "data": { "properties": {
+            "strings":              { "type": "keyword" }
+          }}
+        }},
+        "winlog": { "properties": {
+          "event_id":               { "type": "keyword" },
+          "channel":                { "type": "keyword" },
+          "computer_name":          { "type": "keyword" },
+          "record_id":              { "type": "integer" },
+          "logon": { "properties": {
+            "type":                 { "type": "keyword" },
+            "id":                   { "type": "keyword" }
+          }}
+        }},
+        "powershell": { "properties": {
+          "file": { "properties": {
+            "script_block_text":    { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 32766 }}}
+          }}
+        }},
+        "url": { "properties": {
+          "original":               { "type": "keyword", "fields": { "text": { "type": "text" }}}
+        }},
+        "service": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "task": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "message":                  { "type": "text" },
         "tags":                     { "type": "keyword" },
         "log": { "properties": {
           "file": { "properties": {

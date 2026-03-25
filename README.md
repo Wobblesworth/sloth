@@ -6,7 +6,7 @@ Sloth is an automated DFIR analysis platform. Drop forensic evidence — KAPE tr
 
 ## Features
 
-- **Automated pipeline**: drop evidence in a folder, Sloth does the rest
+- **Automated pipeline**: drop evidence in a folder, Sloth does the rest (parallel processing supported)
 - **Multi-format support**: KAPE triages, Windows artifacts, web logs, Linux logs, and more
 - **Built-in parsers**: Hayabusa (Sigma rules), Plaso (super timeline), Eric Zimmerman tools
 - **Pre-built dashboards**: threat detections, timeline analysis, program execution, file system, registry, user activity
@@ -83,6 +83,7 @@ Copy `.env.example` to `.env` and edit as needed:
 | `KIBANA_PORT` | `5601` | Kibana port |
 | `BIND_ADDRESS` | `0.0.0.0` | Listen address (`0.0.0.0` = all interfaces, `127.0.0.1` = local only) |
 | `ES_HOST` | `localhost` | Elasticsearch host (change if ES runs on a different machine) |
+| `PARALLEL_WORKERS` | `auto` | Parallel evidence processing workers. `auto` = 1 per GB of ES heap, or set a number |
 | `DATA_PATH` | `./data` | Where evidence and parsed data are stored |
 
 ## Evidence Naming Convention
@@ -129,6 +130,25 @@ To reprocess a case:
 
 Original ZIP files in `data/completed/` are never deleted by clean commands. Delete them manually if you no longer need them.
 
+## ECS Field Mapping
+
+All parsed events are normalized to [Elastic Common Schema (ECS)](https://www.elastic.co/guide/en/ecs/current/index.html). This means consistent field names across all event types, enabling powerful cross-event queries in Kibana:
+
+| Query | What you find |
+|---|---|
+| `event.category: "authentication" AND event.outcome: "failure"` | All failed logons (any type) |
+| `event.category: "network" AND network.protocol: "rdp"` | All RDP activity |
+| `event.category: "iam"` | Privilege escalation, password resets, group changes |
+| `event.category: "process" AND event.type: "start"` | All process executions |
+| `process.hash.sha256: "abc..."` | Find events by file hash |
+| `source.ip: "10.0.0.1" AND event.category: "authentication"` | Logons from a specific IP |
+
+Key normalized fields set on every event:
+- `event.category` — what kind of event (`authentication`, `process`, `network`, `file`, `iam`, `registry`, `configuration`, `malware`)
+- `event.type` — what happened (`start`, `end`, `access`, `creation`, `change`, `deletion`)
+- `event.outcome` — did it succeed? (`success`, `failure`)
+- `event.action` — specific action (`logon-success`, `file-created`, `rdp-logon`, `password-reset`, etc.)
+
 ## Architecture
 
 ```
@@ -137,9 +157,9 @@ evidence (zip/logs/artifacts)
        ▼
   data/intake/          ← drop files here
        │
-  [Pipeline]            ← auto-detect, parse, ingest
+  [Pipeline]            ← auto-detect, parse, ingest (parallel workers)
        │
-  Elasticsearch         ← search and store
+  Elasticsearch         ← search and store (ECS-normalized)
        │
   Kibana                ← analyze in your browser
 ```
@@ -171,7 +191,7 @@ sloth/
 ## Roadmap
 
 - [x] Phase 1: Foundation (Elasticsearch + Kibana)
-- [x] Phase 2: Pipeline + Hayabusa (automated threat detection)
+- [x] Phase 2: Pipeline + Hayabusa (automated threat detection, 50 event-type handlers, ECS normalization)
 - [ ] Phase 3: EZ Tools (MFT, Registry, Prefetch, EVTX parsing)
 - [ ] Phase 4: Plaso (super timeline generation)
 - [ ] Phase 5: Pre-built dashboards
