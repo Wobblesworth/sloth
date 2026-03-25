@@ -97,7 +97,7 @@ When adding new parsers or handlers, follow these conventions to keep data consi
 - Parse `DOMAIN\User` into `user.name` + `user.domain` via `parse_user()` — skip `n/a` and `-`
 - Parse hash strings via `parse_hashes()` — split into per-algorithm fields
 - For source/target process patterns (Sysmon/8, 10): use `process.*` for source, `process.target.*` for target
-- For logon events: user who logged on goes in `user.target.*`, subject (if different) in `user.*`
+- For logon events: user who logged on goes in BOTH `user.*` AND `user.target.*` (queryable with either). Only use `user.target.*` alone when there is a distinct subject (e.g. 4648 explicit logon has SrcUser in `user.*` and TgtUser in `user.target.*`)
 - Extract high-value ExtraFieldInfo fields into ECS where a direct mapping exists; leave the rest in `event.extra`
 
 ## Gotchas

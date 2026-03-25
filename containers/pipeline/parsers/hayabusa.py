@@ -592,7 +592,7 @@ def _handle_sec_4624(details, extra):
     elif logon_code == "3":
         doc["event"]["category"].append("network")
 
-    # Target user
+    # User who logged on — populate both user.* and user.target.*
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
         tgt_domain = extra.pop("TargetDomainName", None)
@@ -601,7 +601,8 @@ def _handle_sec_4624(details, extra):
         tgt_sid = extra.pop("TargetUserSid", None)
         if tgt_sid and tgt_sid != "S-1-0-0":
             tgt_user["id"] = tgt_sid
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     # Source
     source = {}
@@ -632,7 +633,8 @@ def _handle_sec_4672(details, extra):
         subj_sid = extra.pop("SubjectUserSid", None)
         if subj_sid and subj_sid != "S-1-0-0":
             tgt_user["id"] = subj_sid
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     lid = details.pop("LID", None)
     if lid:
@@ -669,7 +671,8 @@ def _handle_sec_4768(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
@@ -690,7 +693,8 @@ def _handle_sec_4776(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     src_comp = details.pop("SrcComp", None)
     if src_comp:
@@ -910,7 +914,8 @@ def _handle_sec_4625(details, extra):
         tgt_sid = extra.pop("TargetUserSid", None)
         if tgt_sid and tgt_sid != "S-1-0-0":
             tgt_user["id"] = tgt_sid
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     source = {}
     src_ip = details.pop("SrcIP", None)
@@ -1156,7 +1161,8 @@ def _handle_rds_lsm_21(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip) and src_ip != "LOCALE":
@@ -1173,7 +1179,8 @@ def _handle_rds_lsm_23(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     details.pop("SessID", None)
     return doc
@@ -1186,7 +1193,8 @@ def _handle_rds_lsm_24(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip) and src_ip != "LOCALE":
@@ -1410,7 +1418,8 @@ def _handle_sec_4769(details, extra):
 
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
-        doc["user"] = {"target": tgt_user}
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
