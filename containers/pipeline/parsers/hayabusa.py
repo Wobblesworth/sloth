@@ -8,6 +8,7 @@ handler fall back to generic extraction.
 Hayabusa profile: verbose (includes MitreTactics, MitreTags, RuleFile, EvtxFile)
 """
 
+import ipaddress
 import json
 import re
 
@@ -126,13 +127,16 @@ def parse_logon_type(type_string):
 
 
 def is_valid_ip(val):
-    """Check if a value looks like a valid IP address (v4 or v6). Rejects '-', 'n/a', empty."""
+    """Check if a value is a valid IP address (v4 or v6). Rejects '-', 'n/a', empty, '::'."""
     if not val or not isinstance(val, str):
         return False
     if val in ("-", "n/a", "", "::"):
         return False
-    # Quick check: must contain at least one digit
-    return any(c.isdigit() for c in val)
+    try:
+        ipaddress.ip_address(val)
+        return True
+    except ValueError:
+        return False
 
 
 def _pop_internal(details, *keys):
@@ -151,6 +155,88 @@ def _build_process(details, exe_key="Proc", pid_key="PID"):
     if pid is not None:
         proc["pid"] = pid
     return proc
+
+
+def _normalize_source(details, extra):
+    """Build source.* from SrcIP, SrcComp, IpPort with proper ip/address semantics.
+
+    Rules:
+    - SrcIP (if valid IP) → source.ip; also copied to source.address
+    - SrcComp: if valid IP and different from SrcIP → source.nat.ip
+              if valid IP and no SrcIP → source.ip + source.address
+              if hostname → source.address (overrides ip copy)
+    - IpPort → source.port
+    """
+    source = {}
+
+    src_ip = details.pop("SrcIP", None)
+    if is_valid_ip(src_ip):
+        source["ip"] = src_ip
+        source["address"] = src_ip
+
+    src_comp = details.pop("SrcComp", None)
+    if src_comp and src_comp not in ("-", "n/a", ""):
+        if is_valid_ip(src_comp):
+            if "ip" in source and src_comp != source["ip"]:
+                source.setdefault("nat", {})["ip"] = src_comp
+            elif "ip" not in source:
+                source["ip"] = src_comp
+                source["address"] = src_comp
+        else:
+            source["address"] = src_comp
+
+    src_port = to_int(extra.pop("IpPort", None))
+    if src_port is not None:
+        source["port"] = src_port
+
+    return source
+
+
+def _extract_logon_extra(extra, winlog):
+    """Extract authentication-related ExtraFieldInfo into winlog.logon.* and process.*.
+
+    Returns (process_dict, subject_user_dict) — caller merges into doc.
+    """
+    logon = winlog.setdefault("logon", {})
+
+    # Authentication package (NTLM, Kerberos, Negotiate)
+    auth_pkg = extra.pop("AuthenticationPackageName", None)
+    if auth_pkg:
+        logon["authentication_package"] = auth_pkg
+
+    # Logon process (NtLmSsp, Advapi, Kerberos)
+    logon_proc = extra.pop("LogonProcessName", None)
+    if logon_proc:
+        logon["process_name"] = logon_proc
+
+    # Logon GUID (for Kerberos correlation)
+    logon_guid = extra.pop("LogonGuid", None)
+    if logon_guid and logon_guid != "{00000000-0000-0000-0000-000000000000}":
+        logon["guid"] = logon_guid
+
+    # Process that performed the logon
+    proc = {}
+    proc_name = extra.pop("ProcessName", None)
+    if proc_name and proc_name != "-":
+        proc["executable"] = proc_name
+    proc_id = to_int(extra.pop("ProcessId", None))
+    if proc_id is not None and proc_id != 0:
+        proc["pid"] = proc_id
+
+    # Subject (who initiated the logon)
+    subj_user = {}
+    subj_name = extra.pop("SubjectUserName", None)
+    subj_domain = extra.pop("SubjectDomainName", None)
+    subj_sid = extra.pop("SubjectUserSid", None)
+    subj_lid = extra.pop("SubjectLogonId", None)
+    if subj_name and subj_name != "-":
+        subj_user["name"] = subj_name
+        if subj_domain and subj_domain != "-":
+            subj_user["domain"] = subj_domain
+        if subj_sid and subj_sid != "S-1-0-0":
+            subj_user["id"] = subj_sid
+
+    return proc, subj_user
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +327,7 @@ def _handle_sysmon_3(details, extra):
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
         source["ip"] = src_ip
+        source["address"] = src_ip
     src_port = to_int(details.pop("SrcPort", None))
     if src_port is not None:
         source["port"] = src_port
@@ -582,8 +669,6 @@ def _handle_sec_4624(details, extra):
     lid = details.pop("LID", None)
     if lid:
         winlog["logon"]["id"] = lid
-    if winlog["logon"]:
-        doc["winlog"] = winlog
 
     # Enrich category and network.protocol based on logon type
     if logon_code == "10":
@@ -592,7 +677,14 @@ def _handle_sec_4624(details, extra):
     elif logon_code == "3":
         doc["event"]["category"].append("network")
 
-    # User who logged on — populate both user.* and user.target.*
+    # Extract authentication extra fields
+    proc, subj_user = _extract_logon_extra(extra, winlog)
+    if proc:
+        doc["process"] = proc
+    if winlog["logon"]:
+        doc["winlog"] = winlog
+
+    # Target user (who logged on)
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
         tgt_domain = extra.pop("TargetDomainName", None)
@@ -601,20 +693,17 @@ def _handle_sec_4624(details, extra):
         tgt_sid = extra.pop("TargetUserSid", None)
         if tgt_sid and tgt_sid != "S-1-0-0":
             tgt_user["id"] = tgt_sid
-        doc["user"] = dict(tgt_user)
-        doc["user"]["target"] = tgt_user
+        doc["user"] = {"target": tgt_user}
+
+    # Subject user (who initiated) — if meaningful, goes in user.*
+    if subj_user:
+        doc.setdefault("user", {}).update(subj_user)
+    elif tgt_user:
+        # No distinct subject: target user is also the actor (queryable via user.name)
+        doc["user"].update({k: v for k, v in tgt_user.items() if k != "target"})
 
     # Source
-    source = {}
-    src_ip = details.pop("SrcIP", None)
-    if is_valid_ip(src_ip):
-        source["ip"] = src_ip
-    src_comp = details.pop("SrcComp", None)
-    if src_comp:
-        source["address"] = src_comp
-    src_port = to_int(extra.pop("IpPort", None))
-    if src_port is not None:
-        source["port"] = src_port
+    source = _normalize_source(details, extra)
     if source:
         doc["source"] = source
 
@@ -676,7 +765,7 @@ def _handle_sec_4768(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     status = details.pop("Status", None)
     if status:
@@ -734,7 +823,7 @@ def _handle_sec_5145(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     f = {}
     path = details.pop("Path", None)
@@ -763,6 +852,7 @@ def _handle_sec_5156(details, extra):
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
         source["ip"] = src_ip
+        source["address"] = src_ip
     src_port = to_int(details.pop("SrcPort", None))
     if src_port is not None:
         source["port"] = src_port
@@ -792,6 +882,35 @@ def _handle_sec_5156(details, extra):
 
     details.pop("TgtMachineID", None)
     details.pop("TgtSID", None)
+    return doc
+
+
+def _handle_app_18456(details, extra):
+    """Application EventID 18456 — MSSQL Server Failed Logon."""
+    doc = {"event": {"action": "mssql-logon-failure", "category": ["authentication"], "type": ["start"], "outcome": "failure"}}
+
+    # Data[1] = username (sometimes encoded SAP names like B1_..._RW)
+    username = details.pop("Data[1]", None)
+    if username and username.strip():
+        doc["user"] = {"name": username.strip()}
+
+    # Data[2] = failure reason
+    reason = details.pop("Data[2]", None)
+    if reason:
+        doc["event"]["reason"] = reason.replace("Reason: ", "")
+
+    # Data[3] = client IP in format "[CLIENT: 1.2.3.4]" or "[CLIENT: <local machine>]"
+    client = details.pop("Data[3]", None)
+    if client:
+        match = re.match(r"\[CLIENT:\s*(.+)\]", client)
+        if match:
+            addr = match.group(1).strip()
+            if is_valid_ip(addr):
+                doc["source"] = {"ip": addr, "address": addr}
+            elif addr != "<local machine>":
+                doc["source"] = {"address": addr}
+
+    details.pop("Binary", None)
     return doc
 
 
@@ -859,7 +978,7 @@ def _handle_rds_rcm_1149(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     return doc
 
@@ -898,8 +1017,6 @@ def _handle_sec_4625(details, extra):
     lid = details.pop("LID", None)
     if lid:
         winlog["logon"]["id"] = lid
-    if winlog["logon"]:
-        doc["winlog"] = winlog
 
     if logon_code == "10":
         doc["event"]["category"].append("network")
@@ -907,6 +1024,19 @@ def _handle_sec_4625(details, extra):
     elif logon_code == "3":
         doc["event"]["category"].append("network")
 
+    # AuthPkg from Details (Hayabusa abbreviation)
+    auth_pkg = details.pop("AuthPkg", None)
+    if auth_pkg:
+        winlog.setdefault("logon", {})["authentication_package"] = auth_pkg
+
+    # Extract authentication extra fields
+    proc, subj_user = _extract_logon_extra(extra, winlog)
+    if proc:
+        doc["process"] = proc
+    if winlog["logon"]:
+        doc["winlog"] = winlog
+
+    # Target user
     tgt_user = parse_user(details.pop("TgtUser", None))
     if tgt_user:
         tgt_domain = extra.pop("TargetDomainName", None)
@@ -915,27 +1045,27 @@ def _handle_sec_4625(details, extra):
         tgt_sid = extra.pop("TargetUserSid", None)
         if tgt_sid and tgt_sid != "S-1-0-0":
             tgt_user["id"] = tgt_sid
-        doc["user"] = dict(tgt_user)
-        doc["user"]["target"] = tgt_user
+        doc["user"] = {"target": tgt_user}
 
-    source = {}
-    src_ip = details.pop("SrcIP", None)
-    if is_valid_ip(src_ip):
-        source["ip"] = src_ip
-    src_comp = details.pop("SrcComp", None)
-    if src_comp:
-        source["address"] = src_comp
-    src_port = to_int(extra.pop("IpPort", None))
-    if src_port is not None:
-        source["port"] = src_port
+    # Subject user
+    if subj_user:
+        doc.setdefault("user", {}).update(subj_user)
+    elif tgt_user:
+        doc["user"].update({k: v for k, v in tgt_user.items() if k != "target"})
+
+    # Source
+    source = _normalize_source(details, extra)
     if source:
         doc["source"] = source
 
-    proc = _build_process(details)
-    if proc:
-        doc["process"] = proc
+    # Process from Details (Proc/PID) — fallback if extra didn't provide one
+    detail_proc = _build_process(details)
+    if detail_proc:
+        if proc:
+            _deep_merge(proc, detail_proc)
+        else:
+            doc["process"] = detail_proc
 
-    details.pop("AuthPkg", None)
     details.pop("SubStatus", None)
     return doc
 
@@ -993,6 +1123,7 @@ def _handle_sec_4648(details, extra):
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
         source["ip"] = src_ip
+        source["address"] = src_ip
     if source:
         doc["source"] = source
 
@@ -1072,6 +1203,29 @@ def _handle_tasksch_141(details, extra):
     if user:
         doc["user"] = user
 
+    return doc
+
+
+def _handle_tasksch_129(details, extra):
+    """Task Scheduler EventID 129 — Task Process Created."""
+    doc = {"event": {"action": "scheduled-task-process-created", "category": ["process"], "type": ["start"], "outcome": "success"}}
+
+    task_name = details.pop("TaskName", None)
+    if task_name:
+        doc["task"] = {"name": task_name}
+
+    proc = {}
+    path = details.pop("Path", None)
+    if path:
+        proc["executable"] = path
+    pid = to_int(details.pop("ProcessID", None))
+    if pid is not None:
+        proc["pid"] = pid
+    if proc:
+        doc["process"] = proc
+
+    details.pop("Name", None)
+    details.pop("Priority", None)
     return doc
 
 
@@ -1170,7 +1324,7 @@ def _handle_rds_lsm_21(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip) and src_ip != "LOCALE":
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     details.pop("SessID", None)
     return doc
@@ -1202,7 +1356,25 @@ def _handle_rds_lsm_24(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip) and src_ip != "LOCALE":
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
+
+    details.pop("SessID", None)
+    return doc
+
+
+def _handle_rds_lsm_25(details, extra):
+    """RDS-LSM EventID 25 — RDP Reconnect."""
+    doc = {"event": {"action": "rdp-reconnect", "category": ["authentication", "network"], "type": ["start"], "outcome": "success"},
+           "network": {"protocol": "rdp"}}
+
+    tgt_user = parse_user(details.pop("TgtUser", None))
+    if tgt_user:
+        doc["user"] = dict(tgt_user)
+        doc["user"]["target"] = tgt_user
+
+    src_ip = details.pop("SrcIP", None)
+    if is_valid_ip(src_ip) and src_ip != "LOCALE":
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     details.pop("SessID", None)
     return doc
@@ -1440,7 +1612,7 @@ def _handle_sec_4769(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     status = details.pop("Status", None)
     if status:
@@ -1461,7 +1633,7 @@ def _handle_sec_5140(details, extra):
 
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
-        doc["source"] = {"ip": src_ip}
+        doc["source"] = {"ip": src_ip, "address": src_ip}
 
     share_name = details.pop("ShareName", None)
     if share_name:
@@ -1483,6 +1655,7 @@ def _handle_sec_5157(details, extra):
     src_ip = details.pop("SrcIP", None)
     if is_valid_ip(src_ip):
         source["ip"] = src_ip
+        source["address"] = src_ip
     src_port = to_int(details.pop("SrcPort", None))
     if src_port is not None:
         source["port"] = src_port
@@ -1863,6 +2036,7 @@ DISPATCH = {
     ("TaskSch", 106):   _handle_tasksch_106,
     ("TaskSch", 140):   _handle_tasksch_140,
     ("TaskSch", 141):   _handle_tasksch_141,
+    ("TaskSch", 129):   _handle_tasksch_129,
     ("TaskSch", 200):   _handle_tasksch_200,
     # PowerShell
     ("PwSh", 4103):     _handle_pwsh_4103,
@@ -1887,10 +2061,13 @@ DISPATCH = {
     ("RDS-LSM", 21):    _handle_rds_lsm_21,
     ("RDS-LSM", 23):    _handle_rds_lsm_23,
     ("RDS-LSM", 24):    _handle_rds_lsm_24,
+    ("RDS-LSM", 25):    _handle_rds_lsm_25,
     ("RDP-Cli", 1024):  _handle_rdp_cli_1024,
     ("RDP-Cli", 1102):  _handle_rdp_cli_1102,
     # BITS
     ("BitsCli", 59):    _handle_bitscli_59,
+    # MSSQL
+    ("App", 18456):     _handle_app_18456,
     # Defender
     ("Defender", 1116): _handle_defender_1116,
     # WMI

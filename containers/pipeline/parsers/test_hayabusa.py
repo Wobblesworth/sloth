@@ -412,7 +412,13 @@ class TestSec4624:
     def test_source(self):
         doc = run(self.SAMPLE)
         assert doc["source"]["ip"] == "172.16.66.37"
-        assert doc["source"]["address"] == "CLIENT01"
+        assert doc["source"]["address"] == "CLIENT01"  # hostname overrides ip copy
+
+    def test_user_is_target_when_no_subject(self):
+        doc = run(self.SAMPLE)
+        # No subject in ExtraFieldInfo -> user.name mirrors target
+        assert doc["user"]["name"] == "Administrator"
+        assert doc["user"]["target"]["name"] == "Administrator"
 
     def test_event_action(self):
         doc = run(self.SAMPLE)
@@ -740,7 +746,7 @@ class TestSec5136:
 # ---------------------------------------------------------------------------
 
 class TestFallback:
-    SAMPLE = '{"Timestamp":"2019-11-04 14:46:01.171 +01:00","RuleTitle":"Test","Level":"low","Computer":"PC01","Channel":"App","EventID":18456,"RecordID":13026,"Details":{"Data[1]":"sa","Data[2]":"Reason: bad password"},"ExtraFieldInfo":{},"RuleFile":"test.yml","RuleID":"a","EvtxFile":"/path.evtx"}'
+    SAMPLE = '{"Timestamp":"2019-11-04 14:46:01.171 +01:00","RuleTitle":"Test","Level":"low","Computer":"PC01","Channel":"App","EventID":99999,"RecordID":13026,"Details":{"Data[1]":"sa","Data[2]":"Reason: bad password"},"ExtraFieldInfo":{},"RuleFile":"test.yml","RuleID":"a","EvtxFile":"/path.evtx"}'
 
     def test_unhandled_preserves_details(self):
         doc = run(self.SAMPLE)
@@ -748,5 +754,35 @@ class TestFallback:
 
     def test_base_fields_present(self):
         doc = run(self.SAMPLE)
-        assert doc["event"]["code"] == "18456"
-        assert doc["winlog"]["event_id"] == "18456"
+        assert doc["event"]["code"] == "99999"
+        assert doc["winlog"]["event_id"] == "99999"
+
+
+class TestApp18456:
+    SAMPLE = '{"Timestamp":"2019-11-04 14:46:01.171 +01:00","RuleTitle":"MSSQL Failed Logon","Level":"low","Computer":"DB01","Channel":"App","EventID":18456,"RecordID":13026,"Details":{"Data[1]":"sa","Data[2]":"Reason: Password did not match.","Data[3]":"[CLIENT: 172.16.0.89]","Binary":"abc"},"ExtraFieldInfo":{},"RuleFile":"test.yml","RuleID":"a","EvtxFile":"/path.evtx"}'
+
+    def test_action(self):
+        doc = run(self.SAMPLE)
+        assert doc["event"]["action"] == "mssql-logon-failure"
+
+    def test_outcome(self):
+        doc = run(self.SAMPLE)
+        assert doc["event"]["outcome"] == "failure"
+
+    def test_user(self):
+        doc = run(self.SAMPLE)
+        assert doc["user"]["name"] == "sa"
+
+    def test_source_ip(self):
+        doc = run(self.SAMPLE)
+        assert doc["source"]["ip"] == "172.16.0.89"
+        assert doc["source"]["address"] == "172.16.0.89"
+
+    def test_reason(self):
+        doc = run(self.SAMPLE)
+        assert doc["event"]["reason"] == "Password did not match."
+
+    def test_local_machine(self):
+        raw = self.SAMPLE.replace("[CLIENT: 172.16.0.89]", "[CLIENT: <local machine>]")
+        doc = run(raw)
+        assert "source" not in doc

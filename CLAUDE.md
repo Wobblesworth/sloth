@@ -49,6 +49,9 @@ Metadata extracted: `organization.name`, `case.hostname`, `case.date`, `case.id`
 - Phase 1 (foundation) and Phase 2 (Hayabusa pipeline) are complete
 - Next: Phase 3 (EZ Tools: MFT, Registry, Prefetch), Phase 4 (Plaso), Phase 5 (dashboards)
 
+## Backlog
+- **VHD/VHDX support in pipeline**: many DFIR triage tools (e.g. KAPE) produce VHD inside ZIP. Pipeline currently only handles ZIPs with loose EVTX files. Preferred approach: Python `dissect` library (Fox-IT) — reads NTFS from VHD without mounting, no sudo, no kernel modules, container-friendly. Add detection step in `process.py` between extract and `find_evtx_dirs()`: if ZIP contains `.vhd`/`.vhdx`, use dissect to extract EVTX before passing to Hayabusa. Alternatives considered: 7zip (fails on NTFS inside VHD), qemu-nbd+ntfs-3g (works but needs sudo/system packages), libguestfs (heavy).
+
 ## Workflow Tips
 When starting a session, suggest the best approach for the task at hand:
 - **Before a new phase/feature**: use interview mode — ask the user detailed questions about requirements, edge cases, and tradeoffs before writing any code
