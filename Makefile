@@ -55,6 +55,7 @@ rebuild:
 	@docker compose stop pipeline 2>/dev/null || true
 	@docker compose build pipeline
 	@docker compose up -d pipeline
+	@bash scripts/init-kibana.sh
 	@echo "Pipeline rebuilt and restarted."
 
 # List all cases (indices in Elasticsearch)

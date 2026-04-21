@@ -91,3 +91,53 @@ def ingest_jsonl(es, jsonl_path, index_name, transform_fn, batch_size=500,
                     )
 
     return total, errors_total
+
+
+def ingest_docs(es, docs, index_name, batch_size=500, extra_fields=None):
+    """Bulk-ingest already-transformed ECS documents from an iterable.
+
+    Args:
+        es: Elasticsearch client
+        docs: iterable of dicts (already in ECS format)
+        index_name: target index
+        batch_size: docs per bulk request
+        extra_fields: dict merged into every document
+    """
+    actions = []
+    total = 0
+    errors_total = 0
+    error_samples = []
+
+    def _flush(actions):
+        nonlocal total, errors_total
+        success, errors = bulk(es, actions, raise_on_error=False)
+        total += success
+        errors_total += len(errors)
+        for err in errors:
+            if len(error_samples) < 10:
+                error_samples.append(err)
+
+    for doc in docs:
+        if extra_fields:
+            _deep_merge(doc, extra_fields)
+        actions.append({"_index": index_name, "_source": doc})
+        if len(actions) >= batch_size:
+            _flush(actions)
+            actions = []
+
+    if actions:
+        _flush(actions)
+
+    log.info(f"Ingested {total} docs into '{index_name}', {errors_total} errors")
+
+    if error_samples:
+        log.warning(f"First {len(error_samples)} error(s) from Elasticsearch:")
+        for err in error_samples:
+            if isinstance(err, dict):
+                for action, detail in err.items():
+                    error_info = detail.get("error", {})
+                    log.warning(
+                        f"  {error_info.get('type', '?')}: {error_info.get('reason', '?')}"
+                    )
+
+    return total, errors_total

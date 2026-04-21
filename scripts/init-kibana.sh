@@ -71,6 +71,7 @@ create_data_view() {
 echo "Setting up Kibana data views..."
 create_data_view "sloth-all"      "sloth"    "sloth-*"
 create_data_view "sloth-hayabusa" "hayabusa" "sloth-hayabusa-*"
+create_data_view "sloth-libscca"  "prefetch" "sloth-libscca-*"
 
 # Set sloth-all as default data view
 curl -sf -o /dev/null \

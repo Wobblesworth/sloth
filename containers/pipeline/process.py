@@ -18,8 +18,9 @@ from pathlib import Path
 
 from elasticsearch import Elasticsearch
 
-from ingest import load_index_template, ingest_jsonl
+from ingest import load_index_template, ingest_jsonl, ingest_docs
 from parsers.hayabusa import transform as hayabusa_transform
+from parsers.prefetch import transform_pf
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,17 +33,13 @@ log = logging.getLogger("sloth.process")
 SCRIPT_DIR = Path(__file__).parent
 MAPPINGS_DIR = SCRIPT_DIR / "mappings"
 
-# Hayabusa binary — in container it will be at a fixed path
 HAYABUSA_BIN = os.environ.get("HAYABUSA_BIN", shutil.which("hayabusa") or "")
 
 
 def find_hayabusa():
     """Find the Hayabusa binary."""
-    # Check environment variable first
     if HAYABUSA_BIN and Path(HAYABUSA_BIN).exists():
         return HAYABUSA_BIN
-
-    # Check common locations
     candidates = [
         Path.home() / "sloth" / "tools" / "hayabusa" / "hayabusa-3.8.1-lin-x64-gnu",
         Path("/opt/hayabusa/hayabusa"),
@@ -50,7 +47,6 @@ def find_hayabusa():
     for c in candidates:
         if c.exists():
             return str(c)
-
     return None
 
 
@@ -111,6 +107,96 @@ def find_evtx_dirs(extract_dir):
         return []
     # Return the extracted root — Hayabusa will scan recursively
     return [str(extract_dir)]
+
+
+def find_prefetch_files(extract_dir):
+    """Find all .pf files (Windows Prefetch) in the extracted triage."""
+    return list(Path(extract_dir).rglob("*.pf"))
+
+
+def parse_pf_with_libscca(pf_path):
+    """Parse a single .pf file with libscca and return a PECmd-compatible dict.
+
+    Returns None if the file can't be parsed OR is a SuperFetch pre-warming
+    entry (not evidence of execution).
+    """
+    import pyscca
+    try:
+        scca = pyscca.file()
+        scca.open(str(pf_path))
+    except Exception as e:
+        log.warning(f"Failed to open {pf_path.name}: {e}")
+        return None
+
+    try:
+        exe_name = scca.executable_filename or ""
+        # Skip SuperFetch pre-warming entries (Op-*, Ag*) — not execution evidence
+        if exe_name.startswith("Op-") or pf_path.name.startswith("Ag"):
+            return None
+
+        # PF format v17/v23 (XP/Vista/7) has 1 last run time; v26+ (Win8+) has up to 8
+        max_runs = 8 if (scca.format_version or 0) >= 26 else 1
+        last_run_times = []
+        for i in range(max_runs):
+            try:
+                t = scca.get_last_run_time(i)
+                if t:
+                    last_run_times.append(t.isoformat())
+            except Exception:
+                break
+
+        volumes = []
+        for i in range(scca.number_of_volumes):
+            try:
+                v = scca.get_volume_information(i)
+                volumes.append({
+                    "Name": v.device_path,
+                    "SerialNumber": f"{v.serial_number:08X}" if v.serial_number else None,
+                    "CreationTime": v.creation_time.isoformat() if v.creation_time else None,
+                })
+            except Exception:
+                continue
+
+        files_loaded = []
+        for i in range(scca.number_of_filenames):
+            try:
+                files_loaded.append(scca.get_filename(i))
+            except Exception:
+                continue
+
+        # Windows-style path (prefetch files are always in C:\Windows\Prefetch)
+        windows_path = f"C:\\Windows\\Prefetch\\{pf_path.name}"
+
+        return {
+            "SourceFilename": windows_path,
+            "ExecutableFilename": exe_name,
+            "Hash": f"{scca.prefetch_hash:08X}" if scca.prefetch_hash else None,
+            "Size": pf_path.stat().st_size,
+            "Version": f"v{scca.format_version}" if scca.format_version else None,
+            "RunCount": scca.run_count,
+            "LastRunTimes": last_run_times,
+            "Volumes": volumes,
+            "FilesLoaded": files_loaded,
+            "DirectoriesLoaded": [],
+        }
+    finally:
+        scca.close()
+
+
+def yield_prefetch_docs(pf_files):
+    """Parse each .pf with libscca and yield ECS documents."""
+    parsed = 0
+    failed = 0
+    for pf in pf_files:
+        data = parse_pf_with_libscca(pf)
+        if data is None:
+            failed += 1
+            continue
+        parsed += 1
+        pf_meta = {"path": str(pf), "filename": pf.name}
+        for doc in transform_pf(data, pf_meta):
+            yield doc
+    log.info(f"Prefetch: {parsed} parsed, {failed} failed")
 
 
 def run_hayabusa(hayabusa_bin, evtx_dir, output_path):
@@ -215,8 +301,18 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
         extract_zip(zip_path, raw_dir)
         status["steps"]["extract"] = "ok"
 
-        # Step 2: Find EVTX files
-        evtx_dirs = find_evtx_dirs(raw_dir)
+        # Build case metadata to inject into every document
+        case_meta = {"case": {"id": case_id}}
+        if meta["organization"]:
+            case_meta["organization"] = {"name": meta["organization"]}
+        if meta["hostname"]:
+            case_meta["case"]["hostname"] = meta["hostname"]
+        if meta["date"]:
+            case_meta["case"]["date"] = meta["date"]
+
+        es = Elasticsearch(f"http://{es_host}:{es_port}")
+
+        # Step 2: Hayabusa (EVTX)
         evtx_count = len(list(Path(raw_dir).rglob("*.evtx")))
         log.info(f"Found {evtx_count} EVTX files")
 
@@ -224,7 +320,6 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
             log.warning("No EVTX files found — skipping Hayabusa")
             status["steps"]["hayabusa"] = "skipped"
         else:
-            # Step 3: Run Hayabusa
             hayabusa_bin = find_hayabusa()
             if hayabusa_bin is None:
                 log.error("Hayabusa binary not found")
@@ -238,32 +333,33 @@ def process_zip(zip_path, case_id=None, es_host="localhost", es_port=9200):
                 status["steps"]["hayabusa"] = "error"
                 return False
 
-            # Step 4: Ingest into Elasticsearch
-            es = Elasticsearch(f"http://{es_host}:{es_port}")
-            load_index_template(
-                es,
-                MAPPINGS_DIR / "hayabusa.json",
-                "sloth-hayabusa",
-            )
+            load_index_template(es, MAPPINGS_DIR / "hayabusa.json", "sloth-hayabusa")
             index_name = f"sloth-hayabusa-{case_id}".lower()
-
-            # Build case metadata to inject into every document
-            case_meta = {"case": {"id": case_id}}
-            if meta["organization"]:
-                case_meta["organization"] = {"name": meta["organization"]}
-            if meta["hostname"]:
-                case_meta["case"]["hostname"] = meta["hostname"]
-            if meta["date"]:
-                case_meta["case"]["date"] = meta["date"]
-
             total, errors = ingest_jsonl(
                 es, hayabusa_output, index_name, hayabusa_transform,
                 extra_fields=case_meta,
             )
             status["steps"]["ingest_hayabusa"] = {
-                "index": index_name,
-                "ingested": total,
-                "errors": errors,
+                "index": index_name, "ingested": total, "errors": errors,
+            }
+
+        # Step 3: Prefetch (libscca)
+        pf_files = find_prefetch_files(raw_dir)
+        log.info(f"Found {len(pf_files)} Prefetch (.pf) files")
+
+        if not pf_files:
+            log.info("No Prefetch files — skipping")
+            status["steps"]["prefetch"] = "skipped"
+        else:
+            load_index_template(es, MAPPINGS_DIR / "prefetch.json", "sloth-libscca")
+            index_name = f"sloth-libscca-{case_id}".lower()
+            total, errors = ingest_docs(
+                es, yield_prefetch_docs(pf_files), index_name,
+                extra_fields=case_meta,
+            )
+            status["steps"]["prefetch"] = "ok"
+            status["steps"]["ingest_prefetch"] = {
+                "index": index_name, "ingested": total, "errors": errors,
             }
 
         # Done — move ZIP to completed

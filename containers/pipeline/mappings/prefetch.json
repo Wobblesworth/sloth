@@ -1,0 +1,56 @@
+{
+  "index_patterns": ["sloth-libscca-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp":               { "type": "date" },
+        "event": { "properties": {
+          "module":                 { "type": "keyword" },
+          "dataset":                { "type": "keyword" },
+          "action":                 { "type": "keyword" },
+          "category":               { "type": "keyword" },
+          "type":                   { "type": "keyword" },
+          "outcome":                { "type": "keyword" },
+          "original":               { "type": "text" }
+        }},
+        "host": { "properties": {
+          "name":                   { "type": "keyword" }
+        }},
+        "process": { "properties": {
+          "name":                   { "type": "keyword" },
+          "executable":             { "type": "keyword" }
+        }},
+        "file": { "properties": {
+          "path":                   { "type": "keyword", "fields": { "text": { "type": "text" }}},
+          "name":                   { "type": "keyword" },
+          "size":                   { "type": "long" }
+        }},
+        "prefetch": { "properties": {
+          "hash":                   { "type": "keyword" },
+          "run_count":              { "type": "integer" },
+          "version":                { "type": "keyword" },
+          "execution_sequence":     { "type": "integer" },
+          "files_loaded":           { "type": "keyword" },
+          "directories_loaded":     { "type": "keyword" },
+          "volumes": { "properties": {
+            "name":                 { "type": "keyword" },
+            "serial_number":        { "type": "keyword" },
+            "created":              { "type": "date" }
+          }}
+        }},
+        "case": { "properties": {
+          "id":                     { "type": "keyword" },
+          "hostname":               { "type": "keyword" },
+          "date":                   { "type": "keyword" }
+        }},
+        "organization": { "properties": {
+          "name":                   { "type": "keyword" }
+        }}
+      }
+    }
+  }
+}
