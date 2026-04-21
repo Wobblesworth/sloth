@@ -13,7 +13,9 @@ up:
 	@docker compose up -d
 	@echo ""
 	@echo "Sloth is waking up..."
-	@echo "Kibana will be available at http://localhost:$${KIBANA_PORT:-5601} (may take ~60s)"
+	@bash scripts/init-kibana.sh
+	@echo ""
+	@echo "Kibana: http://localhost:$${KIBANA_PORT:-5601}"
 
 # Stop all services (data is preserved)
 down:
