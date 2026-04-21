@@ -153,7 +153,8 @@ class TestBaseFields:
         assert doc["event"]["provider"] == "Sysmon"
         assert doc["event"]["severity"] == 3
         assert doc["event"]["severity_label"] == "high"
-        assert doc["event"]["module"] == "hayabusa"
+        assert doc["event"]["module"] == "evtx"
+        assert doc["event"]["dataset"] == "hayabusa"
 
     def test_host(self):
         doc = run(self.SAMPLE)

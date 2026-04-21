@@ -2172,7 +2172,8 @@ def transform(raw_line, evt):
     doc = {
         "@timestamp": convert_timestamp(evt.get("Timestamp", "")),
         "event": {
-            "module": "hayabusa",
+            "module": "evtx",
+            "dataset": "hayabusa",
             "original": json.dumps(json.loads(raw_line.strip()), indent=2),
             "code": str(event_id),
             "provider": channel,

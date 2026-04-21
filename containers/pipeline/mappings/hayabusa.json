@@ -10,6 +10,7 @@
         "@timestamp":               { "type": "date" },
         "event": { "properties": {
           "module":                 { "type": "keyword" },
+          "dataset":                { "type": "keyword" },
           "code":                   { "type": "keyword" },
           "provider":               { "type": "keyword" },
           "action":                 { "type": "keyword" },
